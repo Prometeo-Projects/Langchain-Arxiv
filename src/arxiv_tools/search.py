@@ -1,14 +1,39 @@
-'''
-Candy
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+import os
 
-Desarrollar una función con la cual podamos correr un vector_database y crear una función que dado
-un documento lo guarde en el vector_database. Importante utilizar Chunking (Fragmentación) para asi
-guardar el documento en trozos.
+_DEFAULT_EMBEDDING_MODEL = None
 
-Librería recomendada: langchain-text-splitters y para la VDB algo ligero como ChromaDB o FAISS
+def get_embedding_model(model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> HuggingFaceEmbeddings:
+    global _DEFAULT_EMBEDDING_MODEL
+    if _DEFAULT_EMBEDDING_MODEL is None:
+        _DEFAULT_EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name=model_name)
+    return _DEFAULT_EMBEDDING_MODEL
 
-def save_to_vdb(full_text, metadata):
-    # 1. Fragmentar el texto
-    # 2. Convertir fragmentos a vectores (Embeddings)
-    # 3. Guardar en VDB
-'''
+
+def save_to_vdb(
+    full_text: str,
+    metadata: dict,
+    persist_directory: str = "vdb",
+    embedding_model: HuggingFaceEmbeddings | None = None,
+) -> Chroma:
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,
+        chunk_overlap=100,
+    )
+    chunks = splitter.split_text(full_text)
+
+    metadatas = [{**metadata, "chunk_id": i} for i in range(len(chunks))]
+
+    if embedding_model is None:
+        embedding_model = get_embedding_model()
+
+    # Load existing collection or create a new one
+    vdb = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embedding_model,
+    )
+    vdb.add_texts(texts=chunks, metadatas=metadatas)
+
+    return vdb
