@@ -1,39 +1,67 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-import os
+#!/usr/bin/env python3
+"""
+ArXiv Paper Searcher
+====================
+Busca papers científicos en arXiv de forma sencilla.
 
-_DEFAULT_EMBEDDING_MODEL = None
+Instalación:
+    pip install arxiv
 
-def get_embedding_model(model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> HuggingFaceEmbeddings:
-    global _DEFAULT_EMBEDDING_MODEL
-    if _DEFAULT_EMBEDDING_MODEL is None:
-        _DEFAULT_EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name=model_name)
-    return _DEFAULT_EMBEDDING_MODEL
+Uso como librería:
+    from arxiv_searcher import arxiv_query
+    papers = arxiv_query("machine learning", 5)
+    for p in papers:
+        print(p['title'])
+
+Uso en terminal:
+    python arxiv_searcher.py "Riemann Hypothesis" --limit 5
+"""
+
+import arxiv
+import json
+import argparse
+from typing import List, Dict, Optional
 
 
-def save_to_vdb(
-    full_text: str,
-    metadata: dict,
-    persist_directory: str = "vdb",
-    embedding_model: HuggingFaceEmbeddings | None = None,
-) -> Chroma:
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100,
-    )
-    chunks = splitter.split_text(full_text)
+def arxiv_query(query: str, nro_respuestas: int = 10) -> List[Dict]:
+    """
+    Busca papers en arXiv y retorna lista de diccionarios.
 
-    metadatas = [{**metadata, "chunk_id": i} for i in range(len(chunks))]
+    Args:
+        query: Término de búsqueda (ej: "Riemann Hypothesis", "quantum computing")
+        nro_respuestas: Número máximo de papers a retornar (default: 10)
 
-    if embedding_model is None:
-        embedding_model = get_embedding_model()
+    Returns:
+        Lista de diccionarios con keys: id, title, summary, pdf_url, authors, published
 
-    # Load existing collection or create a new one
-    vdb = Chroma(
-        persist_directory=persist_directory,
-        embedding_function=embedding_model,
-    )
-    vdb.add_texts(texts=chunks, metadatas=metadatas)
+    Raises:
+        Exception: Si hay error de conexión o la query es inválida
 
-    return vdb
+    Example:
+        >>> papers = arxiv_query("General Relativity", 2)
+        >>> print(papers[0]['title'])
+        'On the General Relativity...'
+    """
+    try:
+        search = arxiv.Search(
+            query=query,
+            max_results=nro_respuestas,
+            sort_by=arxiv.SortCriterion.Relevance
+        )
+
+        papers_list = []
+        for result in search.results():
+            paper_dict = {
+                "id": result.entry_id.split('/')[-1],
+                "title": result.title,
+                "summary": result.summary,
+                "pdf_url": result.pdf_url,
+                "authors": [str(author) for author in result.authors],
+                "published": result.published.strftime("%Y-%m-%d") if result.published else None
+            }
+            papers_list.append(paper_dict)
+
+        return papers_list
+
+    except Exception as e:
+        raise Exception(f"Error buscando en arXiv: {str(e)}")
